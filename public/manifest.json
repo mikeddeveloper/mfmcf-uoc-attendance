@@ -1,0 +1,14 @@
+{
+  "name": "MFMCF Campus Fellowship",
+  "short_name": "MFMCF",
+  "description": "MFMCF Campus Fellowship Attendance System — UNIOSUN Osogbo",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2a0040",
+  "theme_color": "#9c1bb8",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
