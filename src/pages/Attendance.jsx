@@ -9,21 +9,37 @@ const todayLabel = new Date().toLocaleDateString('en-GB', {
 
 const PREFIX = `MFMC-${new Date().getFullYear()}-`
 
+const GROUPS = [
+  'Group 1', 'Group 2', 'Group 3',
+  'Group 4', 'Group 5', 'Group 6',
+]
+
 export default function Attendance() {
   const navigate  = useNavigate()
-  const [id, setId]           = useState(PREFIX)
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState('')
-  const [result, setResult]   = useState(null)
+  const [id, setId]               = useState(PREFIX)
+  const [isExecutive, setIsExec]  = useState(null)   // null = not answered yet
+  const [groups, setGroups]       = useState([])
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState('')
+  const [result, setResult]       = useState(null)
+
+  function toggleGroup(g) {
+    setGroups(prev =>
+      prev.includes(g) ? prev.filter(x => x !== g)
+        : prev.length < 2 ? [...prev, g]
+        : prev
+    )
+  }
 
   async function mark() {
     const trimmed = id.trim().toUpperCase()
-    if (!trimmed) { setError('Please enter your Member ID.'); return }
+    if (!trimmed || trimmed === PREFIX) { setError('Please enter your Member ID.'); return }
+    if (isExecutive === null) { setError('Please answer the executive question.'); return }
     setError(''); setLoading(true)
     try {
       const res  = await fetch('/api/attendance', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ member_id: trimmed }),
+        body: JSON.stringify({ member_id: trimmed, is_executive: isExecutive, groups }),
       })
       const data = await res.json()
       if (data.success) setResult(data)
@@ -40,7 +56,7 @@ export default function Attendance() {
     setId(upper.startsWith(PREFIX) ? upper : PREFIX)
   }
 
-  function reset() { setId(PREFIX); setError(''); setResult(null) }
+  function reset() { setId(PREFIX); setError(''); setResult(null); setIsExec(null); setGroups([]) }
 
   /* ── Success ── */
   if (result) {
@@ -70,7 +86,7 @@ export default function Attendance() {
                     </svg>
                   </div>
                 </div>
-                <div className="att-name">{result.name}</div>
+                <div className="att-name">{result.name || result.member_id}</div>
                 <div className={`att-msg ${isRepeat ? 'repeat' : 'ok'}`}>
                   {isRepeat ? '⚠ Already marked for today' : '✓ Attendance marked successfully!'}
                 </div>
@@ -135,11 +151,74 @@ export default function Attendance() {
               />
             </div>
 
+            {/* Executive question */}
+            <div style={{ marginTop:'1.25rem' }}>
+              <p style={{ fontSize:'.85rem', fontWeight:600, color:'var(--g600)', marginBottom:'.5rem' }}>
+                Are you an Executive?
+              </p>
+              <div style={{ display:'flex', gap:'.5rem' }}>
+                {[['Yes', true], ['No', false]].map(([label, val]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setIsExec(val)}
+                    style={{
+                      flex: 1, padding:'.55rem 0', borderRadius:'var(--r-md)',
+                      border: '2px solid',
+                      borderColor: isExecutive === val ? 'var(--p500)' : 'var(--g200)',
+                      background:  isExecutive === val ? 'var(--p50)'  : 'transparent',
+                      color:       isExecutive === val ? 'var(--p600)' : 'var(--g500)',
+                      fontWeight: 600, fontSize:'.9rem', cursor:'pointer',
+                      transition:'all .15s',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Group selection */}
+            <div style={{ marginTop:'1.1rem' }}>
+              <p style={{ fontSize:'.85rem', fontWeight:600, color:'var(--g600)', marginBottom:'.3rem' }}>
+                Your Group <span style={{ fontWeight:400, color:'var(--g400)' }}>(select 1 or 2 — optional)</span>
+              </p>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:'.4rem' }}>
+                {GROUPS.map(g => {
+                  const sel = groups.includes(g)
+                  const disabled = !sel && groups.length >= 2
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => !disabled && toggleGroup(g)}
+                      style={{
+                        padding:'.38rem .85rem', borderRadius:'2rem',
+                        border: '2px solid',
+                        borderColor: sel ? 'var(--p500)' : 'var(--g200)',
+                        background:  sel ? 'var(--p500)' : 'transparent',
+                        color:       sel ? '#fff'        : 'var(--g500)',
+                        fontSize:'.82rem', fontWeight:600, cursor: disabled ? 'not-allowed' : 'pointer',
+                        opacity: disabled ? 0.4 : 1, transition:'all .15s',
+                      }}
+                    >
+                      {g}
+                    </button>
+                  )
+                })}
+              </div>
+              {groups.length > 0 && (
+                <p style={{ fontSize:'.75rem', color:'var(--p500)', marginTop:'.35rem', fontWeight:600 }}>
+                  Selected: {groups.join(' · ')}
+                </p>
+              )}
+            </div>
+
             {error && (
-              <div className="alert alert-err"><span>⚠</span> {error}</div>
+              <div className="alert alert-err" style={{ marginTop:'1rem' }}><span>⚠</span> {error}</div>
             )}
 
-            <button className="btn btn-flame" onClick={mark} disabled={loading}>
+            <button className="btn btn-flame" onClick={mark} disabled={loading} style={{ marginTop:'1.1rem' }}>
               {loading ? <span className="spinner" /> : 'Mark My Attendance ✓'}
             </button>
           </div>

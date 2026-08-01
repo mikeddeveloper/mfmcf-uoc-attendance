@@ -30,7 +30,8 @@ function meetingLabel(dateStr) {
   return null
 }
 
-const TODAY = new Date().toISOString().split('T')[0]
+const TODAY         = new Date().toISOString().split('T')[0]
+const MANUAL_PREFIX = `MFMC-${new Date().getFullYear()}-`
 
 const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {
   weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
@@ -47,7 +48,8 @@ export default function Admin() {
   const [attLoading, setAttLoading] = useState(false)
   const [attError, setAttError] = useState('')
   const [pdfDate, setPdfDate]   = useState(TODAY)
-  const [manualId, setManualId] = useState('')
+  const [manualId, setManualId] = useState(MANUAL_PREFIX)
+  const [markError, setMarkError] = useState('')
   const [notice, setNotice]     = useState(null)
   const [regUrl, setRegUrl]     = useState('')
 
@@ -91,9 +93,26 @@ export default function Admin() {
     }
   }, [attDate])
 
+  // Silent background refresh — keeps table visible while updating
+  const refreshAttendance = useCallback(async () => {
+    if (!attDate) return
+    try {
+      const r    = await authFetch(`/api/admin/attendance/${attDate}`)
+      const data = await r.json()
+      if (Array.isArray(data)) setAttRows(data)
+    } catch { /* silent — user sees stale data rather than an error */ }
+  }, [attDate])
+
   useEffect(() => {
     if (tab === 'attendance') loadAttendance()
   }, [tab, loadAttendance])
+
+  // Auto-refresh every 30 s while on the Attendance tab
+  useEffect(() => {
+    if (tab !== 'attendance') return
+    const id = setInterval(refreshAttendance, 30000)
+    return () => clearInterval(id)
+  }, [tab, refreshAttendance])
 
   async function logout() {
     localStorage.removeItem('mfmcf_admin_token')
@@ -107,16 +126,36 @@ export default function Admin() {
     flash('ok', `${name} removed.`)
   }
 
+  function handleManualIdChange(e) {
+    const upper = e.target.value.toUpperCase()
+    setManualId(upper.startsWith(MANUAL_PREFIX) ? upper : MANUAL_PREFIX)
+    setMarkError('')
+  }
+
   async function manualMark() {
     const id = manualId.trim().toUpperCase()
-    if (!id || !attDate) return
-    const r = await authFetch('/api/admin/attendance', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ member_id: id, date: attDate }),
-    })
-    const d = await r.json()
-    if (d.success) { setManualId(''); loadAttendance(); flash('ok', 'Attendance marked.') }
-    else flash('err', d.error || 'Member not found.')
+    if (!id || id === MANUAL_PREFIX) { setMarkError('Please enter a Member ID.'); return }
+    if (!attDate) { setMarkError('No date selected.'); return }
+    setMarkError('')
+    try {
+      const r = await authFetch('/api/admin/attendance', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ member_id: id, date: attDate }),
+      })
+      const d = await r.json()
+      if (d.success) {
+        setManualId(MANUAL_PREFIX)
+        loadAttendance()
+        const name = d.name || id
+        flash('ok', d.alreadyMarked
+          ? `${name} was already marked present.`
+          : `${name} marked present ✓`)
+      } else {
+        setMarkError(d.error || 'Member not found.')
+      }
+    } catch {
+      setMarkError('Network error. Check your connection and try again.')
+    }
   }
 
   async function removeAtt(memberId, date) {
@@ -375,6 +414,10 @@ export default function Admin() {
             <div className="fade-up">
               <div className="date-row">
                 <input type="date" value={attDate} onChange={e => setAttDate(e.target.value)} />
+                <span style={{ fontSize:'.72rem', color:'var(--ok)', display:'flex', alignItems:'center', gap:'.3rem', whiteSpace:'nowrap' }}>
+                  <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--ok)', display:'inline-block', animation:'pulse 2s infinite' }} />
+                  Live
+                </span>
                 <button className="abtn abtn-purple" onClick={loadAttendance} disabled={attLoading}>
                   {attLoading ? <span className="spinner" /> : 'Refresh'}
                 </button>
@@ -436,15 +479,24 @@ export default function Admin() {
                   <div className="sec" style={{ marginBottom:'1rem' }}>
                     <div className="sec-head"><h3><CheckCircle2 size={15} /> Manually Mark Present</h3></div>
                     <div className="sec-body">
+                      <p style={{ fontSize:'.8rem', color:'var(--g400)', marginBottom:'.6rem' }}>
+                        Type the last digits of the Member ID — e.g. <strong>MFMC-2026-0001</strong>
+                      </p>
                       <div className="mark-row">
                         <input
                           value={manualId}
-                          onChange={e => setManualId(e.target.value.toUpperCase())}
+                          onChange={handleManualIdChange}
                           onKeyDown={e => e.key === 'Enter' && manualMark()}
-                          placeholder="Enter Member ID…"
+                          placeholder={`${MANUAL_PREFIX}0001`}
+                          style={{ fontFamily:'var(--ff-display)', fontWeight:600, letterSpacing:'.02em' }}
                         />
                         <button className="abtn abtn-green" onClick={manualMark}>Mark Present</button>
                       </div>
+                      {markError && (
+                        <div className="alert alert-err" style={{ marginTop:'.6rem' }}>
+                          <span>⚠</span> {markError}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -460,7 +512,7 @@ export default function Admin() {
                     <div className="tbl-wrap">
                       <table>
                         <thead>
-                          <tr><th>#</th><th>Member ID</th><th>Name</th><th>Church Dept</th><th>Status</th><th>Time</th></tr>
+                          <tr><th>#</th><th>Member ID</th><th>Name / Role</th><th>Church Dept</th><th>Status</th><th>Time</th></tr>
                         </thead>
                         <tbody>
                           {attLoading
@@ -470,7 +522,19 @@ export default function Admin() {
                                   style={{ background: r.present ? 'rgba(22,163,74,.04)' : undefined }}>
                                 <td style={{ color:'var(--g400)', fontSize:'.75rem' }}>{i + 1}</td>
                                 <td><span className="chip">{r.member_id}</span></td>
-                                <td><strong>{r.name}</strong></td>
+                                <td>
+                                  <strong>{r.name}</strong>
+                                  {r.present && (
+                                    <div style={{ display:'flex', flexWrap:'wrap', gap:'.25rem', marginTop:'.25rem' }}>
+                                      {r.is_executive && (
+                                        <span className="chip chip-purple" style={{ fontSize:'.65rem', padding:'.1rem .45rem' }}>Executive</span>
+                                      )}
+                                      {(r.groups || []).map(g => (
+                                        <span key={g} className="chip" style={{ fontSize:'.65rem', padding:'.1rem .45rem' }}>{g}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
                                 <td style={{ color:'var(--g500)' }}>{r.church_dept || '—'}</td>
                                 <td>
                                   <span className={`chip ${r.present ? 'chip-green' : 'chip-red'}`}>

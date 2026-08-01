@@ -2,6 +2,8 @@ require('dotenv').config()
 
 const express      = require('express')
 const crypto       = require('crypto')
+const fs           = require('fs')
+const path         = require('path')
 const PDFDocument  = require('pdfkit')
 const db           = require('../lib/db')
 
@@ -54,12 +56,15 @@ app.get('/api/member/:id', async (req, res) => {
 // Mark attendance (self-service)
 app.post('/api/attendance', async (req, res) => {
   try {
-    const { member_id } = req.body
+    const { member_id, is_executive, groups } = req.body
     if (!member_id) return res.json({ success: false, error: 'Member ID required.' })
     const member = await db.findMember(member_id.trim().toUpperCase())
     if (!member) return res.json({ success: false, error: 'Member ID not found. Please check and try again.' })
     const today  = new Date().toISOString().split('T')[0]
-    const marked = await db.markAttendance(member.member_id, today)
+    const marked = await db.markAttendance(member.member_id, today, {
+      is_executive: !!is_executive,
+      groups: Array.isArray(groups) ? groups : [],
+    })
     res.json({ success: true, name: member.name, alreadyMarked: !marked })
   } catch (e) {
     res.json({ success: false, error: e.message })
@@ -113,9 +118,9 @@ app.post('/api/admin/attendance', adminOnly, async (req, res) => {
   try {
     const { member_id, date } = req.body
     const member = await db.findMember(member_id.trim().toUpperCase())
-    if (!member) return res.json({ success: false, error: 'Member not found.' })
+    if (!member) return res.json({ success: false, error: `No member found with ID "${member_id.trim().toUpperCase()}". Make sure the ID is correct.` })
     const marked = await db.markAttendance(member.member_id, date)
-    res.json({ success: true, alreadyMarked: !marked })
+    res.json({ success: true, name: member.name, alreadyMarked: !marked })
   } catch (e) {
     res.json({ success: false, error: e.message })
   }
@@ -128,7 +133,7 @@ app.delete('/api/admin/attendance/:memberId/:date', adminOnly, async (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-/* ── Admin: PDF report ───────────────────────────────────── */
+/* ── Meeting label ───────────────────────────────────────── */
 
 function meetingLabel(dateStr) {
   const d = new Date(dateStr + 'T00:00:00')
@@ -140,40 +145,151 @@ function meetingLabel(dateStr) {
   return null
 }
 
+/* ── PDF table helper ────────────────────────────────────── */
+
+function pdfTable(doc, columns, data, x, rowH) {
+  if (!data.length) return
+  const W   = columns.reduce((s, c) => s + c.w, 0)
+  const btm = doc.page.height - doc.page.margins.bottom - 25
+
+  function header(atY) {
+    doc.rect(x, atY, W, rowH).fill('#6b21a8')
+    let cx = x
+    columns.forEach(col => {
+      doc.fillColor('#fff').fontSize(6.5).font('Helvetica-Bold')
+        .text(col.label, cx + 3, atY + Math.floor((rowH - 6.5) / 2), { width: col.w - 6, lineBreak: false })
+      cx += col.w
+    })
+    return atY + rowH
+  }
+
+  let y = header(doc.y)
+
+  data.forEach((row, i) => {
+    if (y + rowH > btm) { doc.addPage(); y = doc.page.margins.top; y = header(y) }
+    doc.rect(x, y, W, rowH).fill(i % 2 === 0 ? '#ffffff' : '#f5f3ff')
+    let cx = x
+    columns.forEach(col => {
+      doc.fillColor('#0f172a').fontSize(7).font('Helvetica')
+        .text(String(col.get(row, i) ?? '—'), cx + 3, y + Math.floor((rowH - 7) / 2), {
+          width: col.w - 6, lineBreak: false, ellipsis: true,
+        })
+      cx += col.w
+    })
+    doc.moveTo(x, y + rowH).lineTo(x + W, y + rowH).lineWidth(0.2).stroke('#e2e8f0')
+    y += rowH
+  })
+
+  doc.y = y
+}
+
+/* ── Admin: PDF report ───────────────────────────────────── */
+
 app.get('/api/admin/pdf/:date', adminOnly, async (req, res) => {
   try {
     const date    = req.params.date
     const rows    = await db.getAttendanceForDate(date)
     const present = rows.filter(r => r.present)
     const absent  = rows.filter(r => !r.present)
+    const label   = meetingLabel(date)
+    const rate    = rows.length ? Math.round(present.length / rows.length * 100) : 0
+    const fmtD    = new Date(date + 'T00:00:00').toLocaleDateString('en-GB', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    })
 
-    const doc = new PDFDocument({ margin: 50, size: 'A4' })
+    const doc = new PDFDocument({ margin: 45, size: 'A4' })
     res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="attendance-${date}.pdf"`)
+    res.setHeader('Content-Disposition', `attachment; filename="MFMCF-Attendance-${date}.pdf"`)
     doc.pipe(res)
 
-    doc.fontSize(16).font('Helvetica-Bold')
-      .text('MFMCF Campus Fellowship · UNIOSUN Osogbo', { align: 'center' })
-    doc.fontSize(12).font('Helvetica')
-      .text(`Attendance Report — ${date}`, { align: 'center' })
-    doc.moveDown(0.5)
-    doc.fontSize(11)
-      .text(`Total: ${rows.length}   Present: ${present.length}   Absent: ${absent.length}`, { align: 'center' })
-    doc.moveDown()
+    const ML = 45
+    const PW = doc.page.width   // 595.28
+    const UW = PW - ML * 2     // 505.28
 
-    const section = (title, list) => {
-      if (!list.length) return
-      doc.fontSize(12).font('Helvetica-Bold').text(title)
-      doc.moveDown(0.3)
-      list.forEach((r, i) => {
-        doc.fontSize(10).font('Helvetica')
-          .text(`${i + 1}. ${r.name} (${r.member_id})${r.church_dept ? ' — ' + r.church_dept : ''}`)
-      })
-      doc.moveDown()
+    // ── Logo ─────────────────────────────────────────────────
+    let afterLogo = ML
+    try {
+      const lp = path.join(__dirname, '../public/logo.png')
+      if (fs.existsSync(lp)) {
+        doc.image(lp, (PW - 54) / 2, ML, { width: 54 })
+        afterLogo = ML + 62
+      }
+    } catch {}
+
+    // ── Church header ─────────────────────────────────────────
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#6b21a8')
+      .text('MFMCF CAMPUS FELLOWSHIP', ML, afterLogo, { align: 'center', width: UW })
+    doc.fontSize(8).font('Helvetica').fillColor('#6b7280')
+      .text('Mountain of Fire and Miracles Crusade · UNIOSUN Osogbo', ML, doc.y + 1, { align: 'center', width: UW })
+
+    if (label) {
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#9c1bb8')
+        .text(label, ML, doc.y + 5, { align: 'center', width: UW })
     }
 
-    section('PRESENT', present)
-    section('ABSENT', absent)
+    doc.fontSize(8.5).font('Helvetica').fillColor('#374151')
+      .text(`Attendance Report · ${fmtD}`, ML, doc.y + 3, { align: 'center', width: UW })
+
+    // Divider
+    const divY = doc.y + 7
+    doc.moveTo(ML, divY).lineTo(ML + UW, divY).lineWidth(1.5).stroke('#9c1bb8')
+
+    // ── Summary bar ────────────────────────────────────────────
+    const sumY = divY + 8
+    doc.rect(ML, sumY, UW, 20).fill('#6b21a8')
+    doc.fillColor('#fff').fontSize(8).font('Helvetica-Bold')
+      .text(
+        `Total Registered: ${rows.length}     Present: ${present.length}     Absent: ${absent.length}     Rate: ${rate}%`,
+        ML + 6, sumY + 6, { width: UW - 12, align: 'center', lineBreak: false }
+      )
+    doc.y = sumY + 28
+
+    // ── Present table ──────────────────────────────────────────
+    if (present.length) {
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#16a34a')
+        .text(`PRESENT  (${present.length})`, ML, doc.y)
+      doc.y += 4
+
+      pdfTable(doc, [
+        { label: '#',           w: 22,  get: (_, i) => String(i + 1) },
+        { label: 'MEMBER ID',   w: 88,  get: r => r.member_id },
+        { label: 'FULL NAME',   w: 140, get: r => r.name },
+        { label: 'CHURCH DEPT', w: 95,  get: r => r.church_dept || '—' },
+        { label: 'GROUP(S)',    w: 75,  get: r => (r.groups || []).join(', ') || '—' },
+        { label: 'EXEC',        w: 33,  get: r => r.is_executive ? 'Yes' : '—' },
+        { label: 'TIME IN',     w: 52,  get: r => r.marked_at ? r.marked_at.split(' ')[1] || '—' : '—' },
+      ], present, ML, 17)
+
+      doc.y += 12
+    }
+
+    // ── Absent table ───────────────────────────────────────────
+    if (absent.length) {
+      if (doc.y > doc.page.height - 140) { doc.addPage(); doc.y = ML }
+
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#dc2626')
+        .text(`ABSENT  (${absent.length})`, ML, doc.y)
+      doc.y += 4
+
+      pdfTable(doc, [
+        { label: '#',           w: 22,  get: (_, i) => String(i + 1) },
+        { label: 'MEMBER ID',   w: 88,  get: r => r.member_id },
+        { label: 'FULL NAME',   w: 200, get: r => r.name },
+        { label: 'CHURCH DEPT', w: 195, get: r => r.church_dept || '—' },
+      ], absent, ML, 17)
+    }
+
+    // ── Footer ─────────────────────────────────────────────────
+    doc.moveDown(1.5)
+    if (doc.y < doc.page.height - 55) {
+      doc.moveTo(ML, doc.y).lineTo(ML + UW, doc.y).lineWidth(0.5).stroke('#d1d5db')
+      doc.fontSize(6.5).font('Helvetica').fillColor('#9ca3af')
+        .text(
+          `MFMCF Campus Fellowship Attendance System  ·  Generated: ${new Date().toLocaleString('en-GB')}`,
+          ML, doc.y + 5, { align: 'center', width: UW }
+        )
+    }
+
     doc.end()
   } catch (e) {
     res.status(500).json({ error: e.message })

@@ -8,7 +8,7 @@ import { Logo } from '../components/Logo'
 
 const CHURCH_DEPTS = [
   'Choir / Music Team', 'Ushers', 'Media & Technical', 'Prayer Unit',
-  'Evangelism & Outreach', 'Protocol', 'Drama & Creative Arts',
+  'Evangelism & Outreach', 'Follow Up', 'Protocol', 'Drama & Creative Arts',
   'Welfare & Finance', 'Workers in Training', 'General Member',
 ]
 const SCHOOL_COURSES = [
