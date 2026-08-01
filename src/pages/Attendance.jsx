@@ -3,11 +3,13 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ScanLine, ChevronLeft, RefreshCw, UserPlus } from 'lucide-react'
 import { Logo } from '../components/Logo'
 
+const NGA_NOW    = new Date().toLocaleString('sv-SE', { timeZone: 'Africa/Lagos' })
 const todayLabel = new Date().toLocaleDateString('en-GB', {
+  timeZone: 'Africa/Lagos',
   weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
 })
 
-const PREFIX = `MFMC-${new Date().getFullYear()}-`
+const PREFIX = `MFMC-${NGA_NOW.split('-')[0]}-`
 
 const GROUPS = [
   'Group 1', 'Group 2', 'Group 3',

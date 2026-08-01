@@ -60,7 +60,7 @@ app.post('/api/attendance', async (req, res) => {
     if (!member_id) return res.json({ success: false, error: 'Member ID required.' })
     const member = await db.findMember(member_id.trim().toUpperCase())
     if (!member) return res.json({ success: false, error: 'Member ID not found. Please check and try again.' })
-    const today  = new Date().toISOString().split('T')[0]
+    const today  = new Date().toLocaleString('sv-SE', { timeZone: 'Africa/Lagos' }).split(' ')[0]
     const marked = await db.markAttendance(member.member_id, today, {
       is_executive: !!is_executive,
       groups: Array.isArray(groups) ? groups : [],

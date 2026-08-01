@@ -30,7 +30,7 @@ function meetingLabel(dateStr) {
   return null
 }
 
-const TODAY         = new Date().toISOString().split('T')[0]
+const TODAY         = new Date().toLocaleString('sv-SE', { timeZone: 'Africa/Lagos' }).split(' ')[0]
 const MANUAL_PREFIX = `MFMC-${new Date().getFullYear()}-`
 
 const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {
