@@ -33,9 +33,9 @@ function adminOnly(req, res, next) {
 // Register new member
 app.post('/api/register', async (req, res) => {
   try {
-    const { name, phone, church_dept, school_dept, level, birthday } = req.body
+    const { name, phone, church_dept, school_dept, level, birthday, hostel } = req.body
     if (!name?.trim()) return res.json({ success: false, error: 'Name is required.' })
-    const result = await db.addMember({ name, phone, church_dept, school_dept, level, birthday })
+    const result = await db.addMember({ name, phone, church_dept, school_dept, level, birthday, hostel })
     res.json({ success: true, member_id: result.member_id, name: result.name })
   } catch (e) {
     res.json({ success: false, error: e.message })
@@ -301,10 +301,11 @@ app.get('/api/admin/pdf/:date', adminOnly, async (req, res) => {
 app.get('/api/admin/csv/members', adminOnly, async (req, res) => {
   try {
     const members = await db.getAllMembers()
-    const header  = 'Member ID,Name,Phone,Church Dept,School Dept,Level,Birthday,Joined\r\n'
+    const header  = 'Member ID,Name,Phone,Hostel/Address,Church Dept,School Dept,Level,Birthday,Joined\r\n'
     const rows    = members.map(m =>
       [
         m.member_id, m.name, m.phone || '',
+        m.hostel || '',
         m.church_dept || '', m.school_dept || '', m.level || '',
         m.birthday || '',
         m.created_at ? m.created_at.split('T')[0] : '',

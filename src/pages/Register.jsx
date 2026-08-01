@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   User, Phone, Building2, GraduationCap, Calendar,
-  ChevronLeft, Copy, CheckCircle2, ArrowRight, Layers,
+  ChevronLeft, Copy, CheckCircle2, ArrowRight, Layers, MapPin,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 
@@ -100,7 +100,7 @@ const LEVELS = [
 
 export default function Register() {
   const navigate = useNavigate()
-  const [form, setForm]         = useState({ name:'', phone:'', church_dept:'', school_dept:'', level:'', birthday:'' })
+  const [form, setForm]         = useState({ name:'', phone:'', church_dept:'', school_dept:'', level:'', birthday:'', hostel:'' })
   const [customDept, setCustomDept] = useState('')
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
@@ -261,6 +261,15 @@ export default function Register() {
                     <span className="input-icon"><Calendar size={15} /></span>
                     <input type="date" value={form.birthday} onChange={set('birthday')} />
                   </div>
+                </div>
+              </div>
+
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label className="field-label">Hostel / Home Address</label>
+                <div className="input-wrap">
+                  <span className="input-icon"><MapPin size={15} /></span>
+                  <input type="text" value={form.hostel} onChange={set('hostel')}
+                         placeholder="e.g. Block C, Moremi Hall or No. 5 Oke-Baale" autoComplete="street-address" />
                 </div>
               </div>
             </div>

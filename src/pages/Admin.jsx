@@ -374,6 +374,7 @@ export default function Admin() {
                     <thead>
                       <tr>
                         <th>Member ID</th><th>Name</th><th>Phone</th>
+                        <th>Hostel / Address</th>
                         <th>Church Dept</th><th>School Dept</th><th>Level</th>
                         <th>Birthday</th><th>Joined</th><th></th>
                       </tr>
@@ -386,6 +387,7 @@ export default function Admin() {
                             <td><span className="chip">{m.member_id}</span></td>
                             <td><strong>{m.name}</strong></td>
                             <td style={{ color:'var(--g500)' }}>{m.phone || '—'}</td>
+                            <td style={{ color:'var(--g500)' }}>{m.hostel || '—'}</td>
                             <td>{m.church_dept || '—'}</td>
                             <td>{m.school_dept || '—'}</td>
                             <td>{m.level || '—'}</td>
